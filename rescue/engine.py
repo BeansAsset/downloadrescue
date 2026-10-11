@@ -26,6 +26,7 @@ import os
 import random
 import shutil
 import time
+import urllib.parse
 from dataclasses import dataclass, field
 
 from . import checksum, ranges, remote
@@ -160,6 +161,7 @@ class Rescue:
             src = remote.probe(self.url)
         except RemoteError as e:
             raise Refused(f"The new link didn't work: {e}.") from None
+        self.src = src
 
         size_now = os.path.getsize(p.path)
         if resuming:
@@ -447,6 +449,15 @@ class Rescue:
         return final, how
 
     def _plain_name(self):
+        """No name from the browser: the one the server gives, or the link's
+        own file name, or the partial file's name without its ending."""
+        src = getattr(self, "src", None)
+        if src is not None:
+            if src.filename and "/" not in src.filename and src.filename not in (".", ".."):
+                return src.filename
+            from_link = urllib.parse.unquote(os.path.basename(urllib.parse.urlsplit(src.final_url).path))
+            if from_link and from_link not in (".", ".."):
+                return from_link
         base = os.path.basename(self.partial.path)
         for ext in (".crdownload", ".part", ".download", ".partial"):
             if base.endswith(ext):

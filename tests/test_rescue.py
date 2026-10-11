@@ -129,6 +129,11 @@ class RescueTest(unittest.TestCase):
         final, _ = Rescue(p, self.base + "/files/big.iso").run()
         self.assertEqual(self.read(final), self.file)
 
+    def test_placeholder_name_is_replaced_by_the_links_file_name(self):
+        p = self.partial(self.file[:1_000_000], name="Unconfirmed 375703.crdownload", total=SIZE)
+        final, _ = self.run_rescue(p)
+        self.assertEqual(os.path.basename(final), "big.iso")
+
     def test_never_replaces_an_existing_file(self):
         with open(os.path.join(self.dir.name, "big.iso"), "wb") as f:
             f.write(b"someone else's file")

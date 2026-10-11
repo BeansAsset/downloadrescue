@@ -64,6 +64,8 @@ class FinderTest(unittest.TestCase):
         self.assertEqual(set(found), {"Unconfirmed 123.crdownload", "linux.iso.crdownload", "notes.txt.part"})
         game = found["Unconfirmed 123.crdownload"]
         self.assertEqual(game.name, "game.zip")
+        self.assertTrue(finder.placeholder("Unconfirmed 375703"))
+        self.assertFalse(finder.placeholder("Unconfirmed photos.zip"))
         self.assertEqual(game.total, 9000)
         self.assertEqual(game.good, [(0, 1000), (3000, 4500)])     # the empty slice is left out
         self.assertEqual(game.old_url, "https://cdn.example/game.zip?sig=old")

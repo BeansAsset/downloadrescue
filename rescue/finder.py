@@ -11,6 +11,7 @@ listed too, without that extra knowledge.
 """
 
 import os
+import re
 import shutil
 import sqlite3
 import tempfile
@@ -36,7 +37,7 @@ EPOCH_DIFF = 11644473600       # seconds between 1601 (Chrome's clock) and 1970
 @dataclass
 class Found:
     path: str
-    name: str                      # what the finished file will be called
+    name: str | None               # what the finished file will be called (None: ask the new link)
     have: int                      # bytes known to be on disk
     total: int | None
     good: list = field(default_factory=list)
@@ -84,7 +85,8 @@ def _from_history(history, browser):
                 chain = db.execute("SELECT url FROM downloads_url_chains WHERE id = ? "
                                    "ORDER BY chain_index DESC LIMIT 1", (did,)).fetchone()
                 when = end_time / 1e6 - EPOCH_DIFF if end_time else os.path.getmtime(current)
-                found.append(Found(path=current, name=os.path.basename(target or current),
+                name = os.path.basename(target or current)
+                found.append(Found(path=current, name=None if placeholder(name) else name,
                                    have=sum(e - s for s, e in good), total=total or None, good=good,
                                    browser=browser, old_url=chain[0] if chain else None,
                                    etag=etag or None, when=when))
@@ -97,6 +99,12 @@ def downloads_dir():
     return GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD) or os.path.join(HOME, "Downloads")
 
 
+def placeholder(name):
+    """Chrome-based browsers call a download "Unconfirmed 12345.crdownload"
+    until they've settled its real name; that isn't a name to keep."""
+    return name is None or re.fullmatch(r"Unconfirmed \d+(\.crdownload)?", name) is not None
+
+
 def loose_file(path):
     """A partial file the browsers don't know about (or chosen by hand)."""
     name = os.path.basename(path)
@@ -104,6 +112,8 @@ def loose_file(path):
         if name.endswith(ending):
             name = name[: -len(ending)]
             break
+    if placeholder(name):
+        name = None          # the new link will say what it's called
     size = os.path.getsize(path)
     return Found(path=path, name=name, have=size, total=None, when=os.path.getmtime(path))
 

@@ -54,6 +54,8 @@ const FILE = '<svg class="icon" viewBox="0 0 16 16" fill="currentColor"><path d=
 let downloads = [];
 let current = null;
 
+const label = (d) => d.name || d.id.split("/").pop();
+
 function summary(d) {
   const amount = d.total ? `${bytes(d.have)} of ${bytes(d.total)}` : `${bytes(d.have)} so far`;
   const parts = [amount];
@@ -70,7 +72,7 @@ function renderList() {
     const icon = document.createElement("template");
     icon.innerHTML = FILE;
     const text = el("div", "text");
-    text.append(el("div", "title", d.name), el("div", "subtitle",
+    text.append(el("div", "title", label(d)), el("div", "subtitle",
       summary(d) + (d.resuming ? " · rescue in progress" : "")));
     li.append(icon.content.firstChild, text, el("span", "chev", "›"));
     li.addEventListener("click", () => openDetail(d));
@@ -106,7 +108,7 @@ function drawCoverage(d) {
 function openDetail(d) {
   current = d;
   show("detail");
-  $("d-name").textContent = d.name;
+  $("d-name").textContent = label(d);
   $("d-sub").textContent = summary(d);
   drawCoverage(d);
   $("url").value = "";
@@ -151,7 +153,7 @@ const MARK = {
 
 function startWork() {
   show("work");
-  $("w-name").textContent = current.name;
+  $("w-name").textContent = label(current);
   $("w-sub").textContent = "Rescuing";
   steps.clear();
   $("steps").replaceChildren();
