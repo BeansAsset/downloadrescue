@@ -19,16 +19,29 @@ from .bridge import LATER, WebWindow  # sets up GTK and WebKit versions
 
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import APP_ID, APP_NAME, engine, finder  # noqa: E402
+from . import APP_ID, APP_NAME, engine, finder, naming  # noqa: E402
 from .engine import Failed, Partial, Refused  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ICON = os.path.join(os.path.dirname(HERE), "data", APP_ID + ".svg")
 
 
+def kind_of(found):
+    """A short label for the file's type, for the badge: ISO, ZIP, PDF..."""
+    ext = os.path.splitext(found.name or "")[1].lstrip(".")
+    if not ext:
+        try:
+            with open(found.path, "rb") as f:
+                ext = (naming.sniff(f.read(40000)) or "").lstrip(".")
+        except OSError:
+            ext = ""
+    return ext.upper()[:5] if ext and len(ext) <= 8 else "FILE"
+
+
 def describe(found):
     return {
         "id": found.path, "name": found.name, "have": found.have, "total": found.total,
+        "kind": kind_of(found),
         "good": found.good or ([(0, found.have)] if found.have else []),
         "browser": found.browser, "when": found.when,
         "old_host": finder.host_of(found.old_url) if found.old_url else None,
@@ -37,18 +50,44 @@ def describe(found):
     }
 
 
+def prefers_dark():
+    """Whether the desktop asks apps to be dark: the standard setting first
+    (the settings portal), then the GTK theme's name. RESCUE_THEME=light or
+    dark overrides it."""
+    forced = os.environ.get("RESCUE_THEME")
+    if forced in ("light", "dark"):
+        return forced == "dark"
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        reply = bus.call_sync("org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
+                              "org.freedesktop.portal.Settings", "Read",
+                              GLib.Variant("(ss)", ("org.freedesktop.appearance", "color-scheme")),
+                              None, Gio.DBusCallFlags.NONE, 800, None)
+        value = reply.unpack()[0]
+        while isinstance(value, GLib.Variant):
+            value = value.unpack()
+        if value in (1, 2):
+            return value == 1
+    except GLib.Error:
+        pass
+    theme = Gtk.Settings.get_default().get_property("gtk-theme-name") or ""
+    return "dark" in theme.lower()
+
+
 class Window(WebWindow):
     page = "window.html"
 
     def __init__(self, app):
-        super().__init__(app, background=(0.133, 0.133, 0.149, 1), title=APP_NAME)
-        self.set_default_size(620, 640)
+        self.dark = prefers_dark()
+        background = (0.11, 0.11, 0.118, 1) if self.dark else (1, 1, 1, 1)
+        super().__init__(app, background=background, title=APP_NAME)
+        self.set_default_size(600, 680)
         self.found = {}
         self.current = None
 
     def cmd_ready(self, _id):
         self.page_ready = True
-        return self.cmd_list(None)
+        return {"dark": self.dark, "downloads": self.cmd_list(None)}
 
     def cmd_list(self, _id):
         found = finder.find_all()
@@ -88,7 +127,16 @@ class Window(WebWindow):
         partial = Partial(path=found.path, total=found.total, good=list(found.good), name=found.name,
                           etag=found.etag, browser=found.browser)
 
+        last = {"t": 0.0}
+
         def event(kind, **details):
+            # Progress can come thousands of times a second; the window only
+            # needs about ten updates a second (and always the last one).
+            if kind == "progress":
+                now = time.monotonic()
+                if now - last["t"] < 0.1 and details["done"] < details["total"]:
+                    return
+                last["t"] = now
             GLib.idle_add(lambda: (self.emit(kind, details), False)[1])
 
         self.current = engine.Rescue(partial, url, sha256, on_event=event)
@@ -135,7 +183,7 @@ class Application(Gtk.Application):
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
-        Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", True)
+        Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", prefers_dark())
 
     def do_command_line(self, command_line):
         if self.window is None:

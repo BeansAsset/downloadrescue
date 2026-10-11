@@ -3,81 +3,102 @@
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; script-src 'self' file:; style-src 'self' file:; img-src 'self' file: data:; connect-src 'none'">
+        content="default-src 'none'; script-src 'self' file:; style-src 'self' file:; font-src 'self' file:; img-src 'self' file: data:; connect-src 'none'">
   <title>DownloadRescue</title>
-  <link rel="stylesheet" href="base.css">
   <link rel="stylesheet" href="window.css">
 </head>
 <body>
+  <nav class="toolbar">
+    <button class="crumb" id="crumb-root">DownloadRescue</button>
+    <span class="sep" id="crumb-sep" hidden>/</span>
+    <span class="here" id="crumb-here" hidden></span>
+  </nav>
+
   <!-- nothing to rescue -->
-  <section id="empty" class="status-page" hidden>
-    <img class="app-icon" src="../../data/io.github.beansasset.DownloadRescue.svg" alt="">
-    <h1>No Failed Downloads</h1>
-    <p>When a download stops part way, it shows up here, and you can finish it from a new link instead of starting over.</p>
-    <button class="button" data-action="choose">Open a Partial File…</button>
+  <section id="empty" hidden>
+    <main>
+      <img class="app-icon" src="../../data/io.github.beansasset.DownloadRescue.svg" alt="">
+      <h1>No failed downloads</h1>
+      <p class="lede">When a download in your browser stops part way, it appears here, and you can finish it from a new link instead of starting over.</p>
+    </main>
+    <footer>
+      <span class="note"></span>
+      <button class="btn" data-action="choose">Open a Partial File…</button>
+    </footer>
   </section>
 
   <!-- the list -->
   <section id="list" hidden>
-    <div class="group">
-      <h2>Failed Downloads</h2>
-      <ul class="boxed-list" id="downloads"></ul>
-    </div>
-    <div class="actions">
-      <button class="button" data-action="choose">Open a Partial File…</button>
-    </div>
+    <main>
+      <h1>Failed downloads</h1>
+      <p class="meta" id="count"></p>
+      <ul class="rows" id="downloads"></ul>
+    </main>
+    <footer>
+      <span class="note">Something else? Open the unfinished file yourself.</span>
+      <button class="btn" data-action="choose">Open a Partial File…</button>
+    </footer>
   </section>
 
-  <!-- one download: give it a new link -->
+  <!-- one download -->
   <section id="detail" hidden>
-    <button class="button flat back" id="back">‹ All Downloads</button>
-    <h1 class="title-1" id="d-name"></h1>
-    <p class="dim" id="d-sub"></p>
-    <div class="coverage" id="d-bar" aria-hidden="true"></div>
-    <p class="caption" id="d-bar-text"></p>
+    <main>
+      <h1 id="d-name"></h1>
+      <p class="meta" id="d-meta"></p>
 
-    <div class="group">
-      <h2>New Link</h2>
-      <div class="card field-card">
-        <div class="field">
-          <input id="url" type="url" placeholder="https://…" spellcheck="false" autocomplete="off">
-          <button class="button flat" id="paste">Paste</button>
-        </div>
+      <div class="mapwrap">
+        <div class="maphead"><span class="big" id="d-amount"></span><span class="small" id="d-shape"></span></div>
+        <div class="map" id="d-map"></div>
+        <div class="legend" id="d-legend"></div>
       </div>
-      <p class="caption" id="d-hint"></p>
-    </div>
 
-    <div class="group">
-      <h2>Checksum <span class="dim">(optional)</span></h2>
-      <div class="card field-card">
+      <div class="section">
+        <label for="url">New link</label>
         <div class="field">
-          <input id="sha" type="text" placeholder="SHA-256, if the download page lists one" spellcheck="false" autocomplete="off">
+          <input id="url" type="url" placeholder="https://" spellcheck="false" autocomplete="off">
+          <button class="field-button" id="paste">Paste</button>
         </div>
-      </div>
-      <p class="caption">With a checksum, the finished file is verified completely. Without one, it's checked by comparing parts.</p>
-    </div>
+        <p class="help" id="d-hint"></p>
 
-    <p class="banner" id="d-error" hidden></p>
-    <div class="actions">
-      <button class="button suggested big" id="go">Rescue Download</button>
-    </div>
+        <button class="link" id="sha-toggle">Add a SHA-256 checksum…</button>
+        <div id="sha-box" hidden>
+          <label for="sha" class="sub-label">SHA-256 checksum</label>
+          <div class="field">
+            <input id="sha" type="text" placeholder="From the download page, if it lists one" spellcheck="false" autocomplete="off">
+          </div>
+          <p class="help">With a checksum the finished file is verified completely. Without one it's checked by comparing parts, and a checksum published next to the file is found by itself.</p>
+        </div>
+        <p class="error" id="d-error" hidden></p>
+      </div>
+    </main>
+    <footer>
+      <span class="note" id="d-note"></span>
+      <button class="btn primary" id="go">Rescue Download</button>
+    </footer>
   </section>
 
-  <!-- working, then the result -->
+  <!-- rescuing, and how it ended -->
   <section id="work" hidden>
-    <h1 class="title-1" id="w-name"></h1>
-    <p class="dim" id="w-sub">Rescuing</p>
-    <ul class="boxed-list steps" id="steps"></ul>
-    <div class="meter" id="meter" hidden><div class="fill" id="fill"></div></div>
-    <p class="caption" id="meter-text"></p>
+    <main>
+      <h1 id="w-name"></h1>
+      <p class="meta" id="w-meta"></p>
 
-    <div id="result" hidden>
-      <p class="result-text" id="r-text"></p>
-      <div class="actions split" id="r-actions"></div>
-    </div>
-    <div class="actions" id="w-actions">
-      <button class="button" id="stop">Stop</button>
-    </div>
+      <div class="mapwrap">
+        <div class="maphead"><span class="big" id="w-amount"></span><span class="small" id="w-shape"></span></div>
+        <div class="map" id="w-map"></div>
+        <div class="legend" id="w-legend"></div>
+      </div>
+
+      <div class="section">
+        <label>Checks</label>
+        <ul class="steps" id="steps"></ul>
+        <div class="progress" id="progress" hidden><b id="progress-fill"></b></div>
+      </div>
+    </main>
+    <footer>
+      <span class="note" id="w-note"></span>
+      <span class="buttons" id="w-buttons"></span>
+    </footer>
   </section>
 
   <script src="window.js"></script>

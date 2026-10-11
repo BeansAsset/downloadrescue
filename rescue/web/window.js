@@ -1,7 +1,8 @@
 "use strict";
 
 /* DownloadRescue window. Python finds downloads and runs the rescue; this
- * page shows them and reports each check as it happens. */
+ * page shows them, with the file drawn as a block map that fills in as the
+ * missing parts arrive. */
 
 const pending = new Map();
 let nextId = 1;
@@ -25,56 +26,117 @@ function el(tag, cls, text) {
   if (text != null) e.textContent = text;
   return e;
 }
-function show(id) {
-  for (const s of document.querySelectorAll("body > section")) s.hidden = s.id !== id;
-}
 
-function bytes(n) {
-  if (n == null) return "unknown size";
-  const units = ["bytes", "KB", "MB", "GB", "TB"];
-  let i = 0, v = n;
-  while (v >= 1000 && i < units.length - 1) { v /= 1000; i++; }
-  return i === 0 ? `${n} bytes` : `${v.toFixed(v < 10 ? 2 : 1)} ${units[i]}`;
+function mb(n) {
+  if (n == null) return "?";
+  if (n < 1e6) return `${(n / 1e3).toFixed(0)} KB`;
+  if (n < 1e9) return `${(n / 1e6).toFixed(1)} MB`;
+  return `${(n / 1e9).toFixed(2)} GB`;
 }
-
-function ago(seconds) {
+function when(seconds) {
   if (!seconds) return "";
   const d = new Date(seconds * 1000), now = new Date();
   const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   if (d.toDateString() === now.toDateString()) return `today at ${time}`;
-  const yesterday = new Date(now - 86400000);
-  if (d.toDateString() === yesterday.toDateString()) return `yesterday at ${time}`;
-  return d.toLocaleDateString([], { day: "numeric", month: "long" });
+  if (d.toDateString() === new Date(now - 86400000).toDateString()) return `yesterday at ${time}`;
+  return `on ${d.toLocaleDateString([], { day: "numeric", month: "long" })}`;
+}
+function seconds(s) {
+  if (!isFinite(s) || s <= 0) return "";
+  if (s < 60) return `about ${Math.max(1, Math.round(s))} second${Math.round(s) === 1 ? "" : "s"} left`;
+  if (s < 3600) return `about ${Math.round(s / 60)} minute${Math.round(s / 60) === 1 ? "" : "s"} left`;
+  return `about ${(s / 3600).toFixed(1)} hours left`;
+}
+const sum = (ranges) => ranges.reduce((n, [s, e]) => n + e - s, 0);
+const label = (d) => d.name || d.id.split("/").pop();
+
+// ---- views and the breadcrumb ---------------------------------------------------------------
+
+function show(id, here) {
+  for (const s of document.querySelectorAll("body > section")) s.hidden = s.id !== id;
+  const deep = Boolean(here);
+  $("crumb-root").textContent = deep ? "Failed downloads" : "DownloadRescue";
+  $("crumb-root").classList.toggle("back", deep);
+  $("crumb-sep").hidden = !deep;
+  $("crumb-here").hidden = !deep;
+  $("crumb-here").textContent = here || "";
 }
 
-const FILE = '<svg class="icon" viewBox="0 0 16 16" fill="currentColor"><path d="M4 1.5A1.5 1.5 0 0 0 2.5 3v10A1.5 1.5 0 0 0 4 14.5h8a1.5 1.5 0 0 0 1.5-1.5V5.6L9.4 1.5H4zM4 3h4.5v3.5H12V13H4V3zm6 .6L11.4 5H10V3.6z"/><path d="M8 7v3.3L6.7 9 6 9.7l2 2 2-2-.7-.7L8.5 10.3V7z" opacity=".9"/></svg>';
+// ---- the block map -------------------------------------------------------------------------------
 
-// ---- the list --------------------------------------------------------------------
+function cover(ranges, s, e) {
+  let n = 0;
+  for (const [a, b] of ranges) n += Math.max(0, Math.min(b, e) - Math.max(a, s));
+  return n / (e - s);
+}
+
+/* Each square is one slice of the file: dark if you have it, green if it
+ * was just rescued, light if it's missing. A square that's partly there is
+ * filled in proportion. */
+function drawMap(map, total, have, fresh = [], cells = 192) {
+  map.classList.toggle("unknown", !total);
+  if (map.children.length !== cells) map.replaceChildren(...Array.from({ length: cells }, () => el("i")));
+  if (!total) { for (const c of map.children) c.style.background = ""; return; }
+  for (let i = 0; i < cells; i++) {
+    const s = (i * total) / cells, e = ((i + 1) * total) / cells;
+    const h = cover(have, s, e), n = cover(fresh, s, e);
+    const c = map.children[i];
+    if (h >= 0.999) c.style.background = "var(--have)";
+    else if (n + h >= 0.999 && n > 0) c.style.background = h > 0
+      ? `linear-gradient(90deg, var(--have) ${h * 100}%, var(--new) ${h * 100}%)` : "var(--new)";
+    else if (h + n > 0) {
+      const a = h * 100, b = (h + n) * 100;
+      c.style.background = `linear-gradient(90deg, var(--have) ${a}%, var(--new) ${a}% ${b}%, var(--missing) ${b}%)`;
+    } else c.style.background = "";
+  }
+}
+
+/* In the list, a slim bar of the pieces: a block map would be too small to read. */
+function strip(d) {
+  const bar = el("div", "strip");
+  if (!d.total) { bar.classList.add("unknown"); return bar; }
+  for (const [s, e] of d.good) {
+    const piece = el("span");
+    piece.style.left = `${(s / d.total) * 100}%`;
+    piece.style.width = `${Math.max(1, ((e - s) / d.total) * 100)}%`;
+    bar.append(piece);
+  }
+  return bar;
+}
+
+function shape(d) {
+  if (!d.total) return "Full size not known yet";
+  const gaps = Math.max(0, d.good.length - 1);
+  const endMissing = !d.good.length || d.good[d.good.length - 1][1] < d.total;
+  if (d.good.length <= 1) return endMissing ? "The end is missing" : "";
+  return `${d.good.length} pieces, ${gaps} gap${gaps === 1 ? "" : "s"}${endMissing ? " and the end" : ""} missing`;
+}
+
+function legend(box, items) {
+  box.replaceChildren(...items.map(([cls, text]) => el("span", cls, text)));
+}
+
+// ---- the list ---------------------------------------------------------------------------------------
 
 let downloads = [];
 let current = null;
 
-const label = (d) => d.name || d.id.split("/").pop();
-
-function summary(d) {
-  const amount = d.total ? `${bytes(d.have)} of ${bytes(d.total)}` : `${bytes(d.have)} so far`;
-  const parts = [amount];
-  if (d.browser) parts.push(d.browser);
-  if (d.when) parts.push(`stopped ${ago(d.when)}`);
-  return parts.join(" · ");
+function amount(d) {
+  return d.total ? `${mb(d.have)} of ${mb(d.total)}` : `${mb(d.have)} so far`;
 }
 
 function renderList() {
   if (!downloads.length) { show("empty"); return; }
   show("list");
+  $("count").textContent = downloads.length === 1
+    ? "One download stopped part way."
+    : `${downloads.length} downloads stopped part way.`;
   $("downloads").replaceChildren(...downloads.map((d) => {
-    const li = el("li", "row link");
-    const icon = document.createElement("template");
-    icon.innerHTML = FILE;
-    const text = el("div", "text");
-    text.append(el("div", "title", label(d)), el("div", "subtitle",
-      summary(d) + (d.resuming ? " · rescue in progress" : "")));
-    li.append(icon.content.firstChild, text, el("span", "chev", "›"));
+    const li = el("li");
+    const text = el("div");
+    const bits = [amount(d), d.browser, d.when && `stopped ${when(d.when)}`].filter(Boolean);
+    text.append(el("div", "name", label(d)), el("p", "meta", bits.join("  ·  ") + (d.resuming ? "  ·  rescue in progress" : "")));
+    li.append(text, strip(d));
     li.addEventListener("click", () => openDetail(d));
     return li;
   }));
@@ -87,36 +149,27 @@ async function choose() {
   openDetail(d);
 }
 
-// ---- one download ------------------------------------------------------------------
-
-function drawCoverage(d) {
-  const bar = $("d-bar");
-  const total = d.total || d.have || 1;
-  bar.replaceChildren(...d.good.map(([s, e]) => {
-    const span = el("span");
-    span.style.left = `${(s / total) * 100}%`;
-    span.style.width = `${Math.max(0.3, ((e - s) / total) * 100)}%`;
-    return span;
-  }));
-  const pct = d.total ? Math.floor((d.have / d.total) * 100) : null;
-  const pieces = d.good.length > 1 ? ` in ${d.good.length} pieces (the browser downloaded it in parallel)` : "";
-  $("d-bar-text").textContent = pct != null
-    ? `You have ${pct}% of it${pieces}. Only the missing parts will be downloaded.`
-    : "Your browser didn't record the full size; the new link will say.";
-}
+// ---- one download ----------------------------------------------------------------------------------
 
 function openDetail(d) {
   current = d;
-  show("detail");
+  show("detail", label(d));
   $("d-name").textContent = label(d);
-  $("d-sub").textContent = summary(d);
-  drawCoverage(d);
+  $("d-meta").textContent = [d.browser && `From ${d.browser}`, d.when && `stopped ${when(d.when)}`]
+    .filter(Boolean).join(", ") || "An unfinished file";
+  $("d-amount").textContent = amount(d);
+  $("d-shape").textContent = shape(d);
+  drawMap($("d-map"), d.total, d.good);
+  legend($("d-legend"), d.total ? [["h", "Downloaded"], ["m", "Missing"]] : [["m", "Size known once the new link answers"]]);
   $("url").value = "";
   $("sha").value = "";
+  $("sha-box").hidden = true;
+  $("sha-toggle").hidden = false;
   $("d-error").hidden = true;
   $("d-hint").textContent = d.old_host
-    ? `It came from ${d.old_host}. Get a fresh link for the same file there, or from a mirror, and paste it here.`
-    : "Get a fresh link for the same file, from the same site or a mirror, and paste it here.";
+    ? `A fresh link to the same file, from ${d.old_host} or a mirror.`
+    : "A fresh link to the same file, from the same site or a mirror.";
+  $("d-note").textContent = d.total ? `Only the missing ${mb(d.total - d.have)} will be downloaded.` : "Only the missing part will be downloaded.";
   $("url").focus();
 }
 
@@ -125,124 +178,153 @@ async function paste() {
   if (text) $("url").value = text;
 }
 
-async function rescue() {
-  const url = $("url").value.trim();
-  const sha = $("sha").value.trim();
-  if (!url) { error("Paste the new link first."); return; }
-  if (sha && !/^[0-9a-fA-F]{64}$/.test(sha)) { error("A SHA-256 checksum is 64 letters and numbers (0-9, a-f)."); return; }
-  const r = await call("rescue", current.id, url, sha);
-  if (r && r.error) { error(r.error); return; }
-  startWork();
-}
-
 function error(text) {
   $("d-error").textContent = text;
   $("d-error").hidden = false;
 }
 
-// ---- the rescue, step by step ----------------------------------------------------------
+async function rescue() {
+  const url = $("url").value.trim();
+  const sha = $("sha").value.trim();
+  if (!url) { error("Paste the new link first."); return; }
+  if (sha && !/^[0-9a-fA-F]{64}$/.test(sha)) { error("A SHA-256 checksum is 64 characters, using 0-9 and a-f."); return; }
+  const r = await call("rescue", current.id, url, sha);
+  if (r && r.error) { error(r.error); return; }
+  startWork(url);
+}
 
-const STEP_ORDER = ["source", "checksum", "overlap", "spots", "checks", "download", "verify", "finish", "stop"];
+// ---- rescuing ----------------------------------------------------------------------------------
+
+const ORDER = ["source", "checksum", "overlap", "spots", "checks", "download", "verify", "finish", "stop"];
 const steps = new Map();
+let total = null, had = [], fresh = [], live = new Map();
+let rate = 0, tick = { t: 0, done: 0 };
 
-const MARK = {
-  ok: '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3 3 7-7"/></svg>',
-  bad: '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
-  note: '<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><circle cx="8" cy="8" r="2"/></svg>',
-};
+function host(url) {
+  try { return new URL(url).hostname; } catch { return url; }
+}
 
-function startWork() {
-  show("work");
+function startWork(url) {
+  show("work", label(current));
   $("w-name").textContent = label(current);
-  $("w-sub").textContent = "Rescuing";
+  $("w-meta").textContent = `Rescuing from ${host(url)}`;
+  total = current.total;
+  had = current.good.slice();
+  fresh = [];
+  live = new Map();
+  rate = 0;
+  tick = { t: 0, done: 0 };
   steps.clear();
   $("steps").replaceChildren();
-  $("meter").hidden = true;
-  $("meter-text").textContent = "";
-  $("result").hidden = true;
-  $("w-actions").hidden = false;
+  $("progress").hidden = true;
+  $("progress-fill").style.width = "0";
+  drawWork();
+  $("w-note").textContent = "Checking the new link";
+  $("w-buttons").replaceChildren(button("Stop", "btn plain", () => call("cancel")));
+}
+
+function drawWork() {
+  drawMap($("w-map"), total, had, fresh);
+  const got = sum(had) + sum(fresh);
+  $("w-amount").textContent = total ? `${mb(got)} of ${mb(total)}` : `${mb(got)} so far`;
+  const gaps = total ? Math.max(0, had.length - 1) + (had.length && had[had.length - 1][1] < total ? 1 : 0) : 0;
+  $("w-shape").textContent = fresh.length ? `Filling ${gaps === 1 ? "the gap" : `${gaps} gaps`}` : shape({ total, good: had });
+  legend($("w-legend"), total ? [["h", "You had"], ["n", "Rescued"], ["m", "Still missing"]] : [["m", "Waiting for the new link"]]);
 }
 
 function setStep(name, state, text) {
-  let row = steps.get(name);
-  if (!row) {
-    row = el("li", "row");
-    row.append(el("span", "mark"), el("div", "text"));
-    steps.set(name, row);
-    const ordered = [...steps.entries()].sort((a, b) => STEP_ORDER.indexOf(a[0]) - STEP_ORDER.indexOf(b[0]));
-    $("steps").replaceChildren(...ordered.map(([, r]) => r));
+  let li = steps.get(name);
+  if (!li) {
+    li = el("li");
+    li.append(el("span", "g"), el("span", "t"));
+    steps.set(name, li);
+    const sorted = [...steps.entries()].sort((a, b) => ORDER.indexOf(a[0]) - ORDER.indexOf(b[0]));
+    $("steps").replaceChildren(...sorted.map(([, x]) => x));
   }
-  const mark = row.querySelector(".mark");
-  mark.className = `mark ${state}`;
-  if (state === "doing") mark.innerHTML = '<span class="spinner"></span>';
-  else mark.innerHTML = MARK[state] || "";
-  row.querySelector(".text").textContent = text;
+  li.className = state;
+  li.querySelector(".g").textContent = { ok: "✓", bad: "✕", note: "–" }[state] || "";
+  li.querySelector(".t").textContent = text;
 }
 
-let lastTick = { t: 0, done: 0 }, speed = 0;
 on.step = (d) => setStep(d.name, d.state, d.text);
+
+on.plan = (d) => {
+  total = d.total;
+  had = d.good;
+  drawWork();
+};
+
 on.progress = (d) => {
-  $("meter").hidden = false;
-  $("fill").style.width = `${(d.done / Math.max(1, d.total)) * 100}%`;
-  const now = performance.now();
-  if (now - lastTick.t > 700) {
-    if (lastTick.t && d.done >= lastTick.done) speed = (d.done - lastTick.done) / ((now - lastTick.t) / 1000);
-    lastTick = { t: now, done: d.done };
+  if (d.what === "download" && d.start != null) {
+    live.set(d.start, d.at);
+    fresh = [...live.entries()].map(([s, e]) => [s, e]);
+    drawWork();
   }
-  const what = d.what === "verify" ? "Checked" : "Fetched";
-  $("meter-text").textContent = `${what} ${bytes(d.done)} of ${bytes(d.total)}` +
-    (speed && d.what !== "verify" ? ` · ${bytes(speed)}/s` : "");
+  $("progress").hidden = false;
+  $("progress-fill").style.width = `${(d.done / Math.max(1, d.total)) * 100}%`;
+  const now = performance.now();
+  if (now - tick.t > 900) {
+    if (tick.t && d.done >= tick.done) rate = (d.done - tick.done) / ((now - tick.t) / 1000);
+    tick = { t: now, done: d.done };
+  }
+  const left = rate ? seconds((d.total - d.done) / rate) : "";
+  $("w-note").textContent = d.what === "verify"
+    ? `Verifying ${mb(d.done)} of ${mb(d.total)}`
+    : [`${mb(d.done)} of ${mb(d.total)}`, rate && `${mb(rate)}/s`, left].filter(Boolean).join("  ·  ");
 };
 
 function stopSpinners() {
-  for (const [name, row] of steps) {
-    if (row.querySelector(".mark").classList.contains("doing")) setStep(name, "bad", row.querySelector(".text").textContent);
-  }
+  for (const [name, li] of steps) if (li.className === "doing") setStep(name, "bad", li.querySelector(".t").textContent);
 }
 
-function finish(title, text, buttons) {
-  $("w-sub").textContent = title;
-  $("r-text").textContent = text;
-  $("r-actions").replaceChildren(...buttons);
-  $("result").hidden = false;
-  $("w-actions").hidden = true;
-}
-
-function button(label, cls, onclick) {
-  const b = el("button", `button ${cls || ""}`, label);
+function button(text, cls, onclick) {
+  const b = el("button", cls, text);
   b.addEventListener("click", onclick);
   return b;
 }
 
-const backToList = () => load();
-
 on.done = (d) => {
-  $("fill").style.width = "100%";
-  finish("Rescued", `Saved as ${d.name}, checked by ${d.how}.`, [
-    button("Show in Folder", "suggested", () => call("show", d.path)),
-    button("Open", "", () => call("open", d.path)),
-    button("Done", "flat", backToList),
-  ]);
+  fresh = total ? [[0, total]] : fresh;
+  had = [];
+  drawMap($("w-map"), total, [], [[0, total]]);
+  $("w-amount").textContent = `${mb(total)} of ${mb(total)}`;
+  $("w-shape").textContent = "Complete";
+  legend($("w-legend"), [["n", "Complete and verified"]]);
+  $("w-name").textContent = d.name;
+  const folder = d.path.split("/").slice(-2, -1)[0] || "your files";
+  $("w-meta").textContent = `Saved as ${d.name} in ${folder}`;
+  $("progress").hidden = true;
+  $("w-note").textContent = `Checked by ${d.how}.`;
+  $("w-buttons").replaceChildren(
+    button("Done", "btn plain", load),
+    button("Show in Folder", "btn", () => call("show", d.path)),
+    button("Open", "btn primary", () => call("open", d.path)));
 };
+
 on.refused = (d) => {
   stopSpinners();
+  if (!total) legend($("w-legend"), [["m", "Left unchanged"]]);
   setStep("stop", "bad", d.text);
-  finish("Not Rescued", "Your download wasn't changed. Try a link to exactly the same file.", [
-    button("Try Another Link", "suggested", () => openDetail(current)),
-    button("Back", "flat", backToList),
-  ]);
+  $("progress").hidden = true;
+  $("w-meta").textContent = "Not rescued";
+  $("w-note").textContent = "Your download wasn't changed.";
+  $("w-buttons").replaceChildren(
+    button("Back", "btn plain", load),
+    button("Try Another Link", "btn primary", () => openDetail(current)));
 };
+
 on.failed = (d) => {
   stopSpinners();
   setStep("stop", "bad", d.text);
-  finish("Stopped", d.kept ? "What was downloaded so far is kept. Run the rescue again to carry on."
-                           : "Your download is as it was before.", [
-    button("Try Again", "suggested", () => openDetail(current)),
-    button("Back", "flat", backToList),
-  ]);
+  $("progress").hidden = true;
+  $("w-meta").textContent = "Stopped";
+  $("w-note").textContent = d.kept ? "What was fetched is kept. Rescue it again to carry on." : "Your download is as it was before.";
+  $("w-buttons").replaceChildren(
+    button("Back", "btn plain", load),
+    button("Try Again", "btn primary", () => openDetail(current)));
 };
 
-// ---- start ----------------------------------------------------------------------------
+// ---- start ---------------------------------------------------------------------------------------
 
 async function load() {
   downloads = await call("list");
@@ -250,10 +332,15 @@ async function load() {
 }
 
 for (const b of document.querySelectorAll('[data-action="choose"]')) b.addEventListener("click", choose);
-$("back").addEventListener("click", renderList);
+$("crumb-root").addEventListener("click", () => { if ($("crumb-root").classList.contains("back")) load(); });
 $("paste").addEventListener("click", paste);
+$("sha-toggle").addEventListener("click", () => { $("sha-box").hidden = false; $("sha-toggle").hidden = true; $("sha").focus(); });
 $("go").addEventListener("click", rescue);
-$("stop").addEventListener("click", () => call("cancel"));
 $("url").addEventListener("keydown", (e) => { if (e.key === "Enter") rescue(); });
 
-(async () => { downloads = await call("ready"); renderList(); })();
+(async () => {
+  const start = await call("ready");
+  document.documentElement.classList.toggle("dark", start.dark);
+  downloads = start.downloads;
+  renderList();
+})();

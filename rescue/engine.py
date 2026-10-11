@@ -139,8 +139,10 @@ class Rescue:
     def step(self, name, state, text):
         self.on_event("step", name=name, state=state, text=text)
 
-    def progress(self, done, total, what):
-        self.on_event("progress", done=done, total=total, what=what)
+    def progress(self, done, total, what, at=None, start=None):
+        """done of total bytes; for downloads, also where in the file the
+        piece now being written started (start) and has reached (at)."""
+        self.on_event("progress", done=done, total=total, what=what, at=at, start=start)
 
     # -- reading what's on disk -------------------------------------------------------
 
@@ -198,6 +200,7 @@ class Rescue:
         with open(p.path, "r+b") as f:
             if not resuming:
                 if not src.ranges:
+                    self.on_event("plan", total=total, good=good)
                     return self._whole_file(f, src, good, total, expected)
                 try:
                     good = self._check_overlap(f, src, good)
@@ -211,7 +214,9 @@ class Rescue:
                                  "Your download was left as it was.") from None
                 self.journal.data["good"] = good
                 self.journal.save()
+                self.on_event("plan", total=total, good=good)
             else:
+                self.on_event("plan", total=total, good=good)
                 self.step("checks", "ok", "Checks were done when this rescue started.")
             self._fill(f, src, good, total)
 
@@ -346,7 +351,7 @@ class Rescue:
                         if unsaved >= SAVE_EVERY:
                             self._record(f, good, gap_start, pos)
                             unsaved = 0
-                        self.progress(done, need, "download")
+                        self.progress(done, need, "download", at=pos, start=gap_start)
                         if self.cancelled:
                             break
                     self._record(f, good, gap_start, pos)
@@ -414,7 +419,7 @@ class Rescue:
             s = max(s, pos)
             if e > s:
                 os.pwrite(f.fileno(), chunk[s - pos:e - pos], s)
-        self.progress(end, total, "download")
+        self.progress(end, total, "download", at=end, start=0)
         return end
 
     def _finish(self, total, expected):

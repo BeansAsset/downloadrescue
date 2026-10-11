@@ -7,7 +7,7 @@ time you notice. Get a fresh link to the same file (from the same site, or a
 mirror), paste it into DownloadRescue, and it downloads only what's missing,
 checks that it really is the same file, and saves it under its real name.
 
-![Failed downloads found in Brave, with how much of each arrived](docs/list.png)
+![Failed downloads found in Brave, with a bar showing which pieces of each arrived](docs/list.png)
 
 ## Without corrupting the file
 
@@ -33,9 +33,17 @@ checks before it writes anything, and never risks what you already have:
 - **Only then** does the file get its real name, never replacing another
   file with the same name.
 
-![Rescuing: paste a new link; the bar shows the three pieces Brave had downloaded](docs/rescue.png)
+Each square in the map is a slice of the file. Dark squares are what you
+have (here, three pieces Brave fetched at the same time), light ones are
+missing:
 
-![Every check passed, the missing 37 MB fetched, the whole file matches its SHA-256 checksum](docs/done.png)
+![A failed download with a new link pasted in, ready to rescue (light mode)](docs/rescue.png)
+
+While it works, the missing squares fill in as they arrive:
+
+![Rescuing: the checks have passed and the gaps are filling in green](docs/rescuing.png)
+
+![Rescued: every check passed and the whole file matches its SHA-256 checksum](docs/done.png)
 
 And when the new link is for a different file:
 
@@ -87,7 +95,7 @@ missing, it shows the command for your distro:
 | Arch, Manjaro | `sudo pacman -S --needed python-gobject gtk3 webkit2gtk-4.1` |
 | openSUSE | `sudo zypper install python3-gobject typelib-1_0-Gtk-3_0 typelib-1_0-WebKit2-4_1` |
 
-Works on X11 and Wayland. Tested on Linux Mint 22 with Brave, rescuing a
+Works on X11 and Wayland, in light and dark mode (it follows your system). Tested on Linux Mint 22 with Brave, rescuing a
 real 64 MB Linux image downloaded in three pieces from one mirror and
 finished from another, verified against its published checksum.
 
@@ -131,4 +139,5 @@ as it was.
 
 ## License
 
-GPL-3.0-or-later (`LICENSE`).
+GPL-3.0-or-later (`LICENSE`). The Manrope typeface is under the SIL Open
+Font License 1.1 (`rescue/web/fonts/Manrope-LICENSE.txt`).
