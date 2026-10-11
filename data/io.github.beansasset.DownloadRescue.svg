@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3fcf8e"/>
+      <stop offset="1" stop-color="#1f9e63"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#bg)"/>
+  <!-- a download arrow, broken and joined again by a band -->
+  <path d="M64 28v18M64 62v20" stroke="#fff" stroke-width="10" stroke-linecap="round"/>
+  <path d="M46 66l18 18 18-18" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="53" y="45" width="22" height="18" rx="5" fill="#fff" fill-opacity=".6"/>
+  <path d="M36 92v4a6 6 0 0 0 6 6h44a6 6 0 0 0 6-6v-4" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/>
+</svg>

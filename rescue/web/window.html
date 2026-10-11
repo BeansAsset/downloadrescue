@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self' file:; style-src 'self' file:; img-src 'self' file: data:; connect-src 'none'">
+  <title>DownloadRescue</title>
+  <link rel="stylesheet" href="base.css">
+  <link rel="stylesheet" href="window.css">
+</head>
+<body>
+  <!-- nothing to rescue -->
+  <section id="empty" class="status-page" hidden>
+    <img class="app-icon" src="../../data/io.github.beansasset.DownloadRescue.svg" alt="">
+    <h1>No Failed Downloads</h1>
+    <p>When a download stops part way, it shows up here, and you can finish it from a new link instead of starting over.</p>
+    <button class="button" data-action="choose">Open a Partial File…</button>
+  </section>
+
+  <!-- the list -->
+  <section id="list" hidden>
+    <div class="group">
+      <h2>Failed Downloads</h2>
+      <ul class="boxed-list" id="downloads"></ul>
+    </div>
+    <div class="actions">
+      <button class="button" data-action="choose">Open a Partial File…</button>
+    </div>
+  </section>
+
+  <!-- one download: give it a new link -->
+  <section id="detail" hidden>
+    <button class="button flat back" id="back">‹ All Downloads</button>
+    <h1 class="title-1" id="d-name"></h1>
+    <p class="dim" id="d-sub"></p>
+    <div class="coverage" id="d-bar" aria-hidden="true"></div>
+    <p class="caption" id="d-bar-text"></p>
+
+    <div class="group">
+      <h2>New Link</h2>
+      <div class="card field-card">
+        <div class="field">
+          <input id="url" type="url" placeholder="https://…" spellcheck="false" autocomplete="off">
+          <button class="button flat" id="paste">Paste</button>
+        </div>
+      </div>
+      <p class="caption" id="d-hint"></p>
+    </div>
+
+    <div class="group">
+      <h2>Checksum <span class="dim">(optional)</span></h2>
+      <div class="card field-card">
+        <div class="field">
+          <input id="sha" type="text" placeholder="SHA-256, if the download page lists one" spellcheck="false" autocomplete="off">
+        </div>
+      </div>
+      <p class="caption">With a checksum, the finished file is verified completely. Without one, it's checked by comparing parts.</p>
+    </div>
+
+    <p class="banner" id="d-error" hidden></p>
+    <div class="actions">
+      <button class="button suggested big" id="go">Rescue Download</button>
+    </div>
+  </section>
+
+  <!-- working, then the result -->
+  <section id="work" hidden>
+    <h1 class="title-1" id="w-name"></h1>
+    <p class="dim" id="w-sub">Rescuing</p>
+    <ul class="boxed-list steps" id="steps"></ul>
+    <div class="meter" id="meter" hidden><div class="fill" id="fill"></div></div>
+    <p class="caption" id="meter-text"></p>
+
+    <div id="result" hidden>
+      <p class="result-text" id="r-text"></p>
+      <div class="actions split" id="r-actions"></div>
+    </div>
+    <div class="actions" id="w-actions">
+      <button class="button" id="stop">Stop</button>
+    </div>
+  </section>
+
+  <script src="window.js"></script>
+</body>
+</html>
