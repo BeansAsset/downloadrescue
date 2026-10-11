@@ -24,12 +24,12 @@ import hashlib
 import json
 import os
 import random
+import re
 import shutil
 import time
-import urllib.parse
 from dataclasses import dataclass, field
 
-from . import checksum, ranges, remote
+from . import checksum, naming, ranges, remote
 from .remote import RemoteError
 
 OVERLAP = 1 << 20          # bytes re-fetched before the stopping point
@@ -449,20 +449,16 @@ class Rescue:
         return final, how
 
     def _plain_name(self):
-        """No name from the browser: the one the server gives, or the link's
-        own file name, or the partial file's name without its ending."""
+        """No name from the browser: see naming.py."""
         src = getattr(self, "src", None)
-        if src is not None:
-            if src.filename and "/" not in src.filename and src.filename not in (".", ".."):
-                return src.filename
-            from_link = urllib.parse.unquote(os.path.basename(urllib.parse.urlsplit(src.final_url).path))
-            if from_link and from_link not in (".", ".."):
-                return from_link
-        base = os.path.basename(self.partial.path)
-        for ext in (".crdownload", ".part", ".download", ".partial"):
-            if base.endswith(ext):
-                return base[: -len(ext)]
-        return base + ".rescued"
+        with open(self.partial.path, "rb") as f:
+            head = f.read(40000)
+        fallback = os.path.basename(self.partial.path)
+        if re.fullmatch(r"Unconfirmed \d+(\.crdownload)?", fallback):
+            fallback = "download"
+        if src is None:
+            return naming.name_for(None, "", None, head, fallback)
+        return naming.name_for(src.filename, src.final_url, src.content_type, head, fallback)
 
     def _undo(self):
         """Put the partial file back exactly as it was before the rescue."""

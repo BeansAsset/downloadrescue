@@ -31,6 +31,7 @@ class Source:
     etag: str | None
     last_modified: str | None
     filename: str | None  # from Content-Disposition, if any
+    content_type: str | None = None
 
 
 _RANGE = re.compile(r"bytes (\d+)-(\d+)/(\d+|\*)")
@@ -88,7 +89,8 @@ def probe(url):
             raise RemoteError("the server compresses the file on the way, so its bytes can't be compared")
         return Source(url=url, final_url=r.geturl(), total=total, ranges=ranges,
                       etag=headers.get("ETag"), last_modified=headers.get("Last-Modified"),
-                      filename=_filename(headers.get("Content-Disposition")))
+                      filename=_filename(headers.get("Content-Disposition")),
+                      content_type=(headers.get("Content-Type") or "").split(";")[0].strip() or None)
 
 
 READ_ERRORS = (http.client.HTTPException, OSError)

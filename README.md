@@ -53,7 +53,10 @@ And when the new link is for a different file:
 - **Anything else** with **Open a Partial File…**.
 
 It reads the browser's download records from a copy and changes nothing in
-the browser.
+the browser. If the browser hadn't settled the file's name yet (Brave and
+Chrome call it "Unconfirmed 12345" until then), the finished file is named
+after the new link, or, for links like `download.php?id=7`, gets the right
+extension from what's inside it.
 
 ## What it can't do
 
@@ -114,6 +117,7 @@ rescue/
   checksum.py   finding a published SHA-256 next to the file
   finder.py     failed downloads in browsers' records and the Downloads folder
   ranges.py     which byte ranges are good, and which are missing
+  naming.py     what to call the finished file when the browser had no name yet
   main.py       the window and the terminal command
   web/          the window (HTML, CSS, JS)
 tools/          setup for any common distro
