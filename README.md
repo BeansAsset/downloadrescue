@@ -99,6 +99,28 @@ Works on X11 and Wayland, in light and dark mode (it follows your system). Teste
 real 64 MB Linux image downloaded in three pieces from one mirror and
 finished from another, verified against its published checksum.
 
+## On a Mac
+
+DownloadRescue runs on macOS 11 or newer with the same window and checks.
+It finds failed downloads from Brave, Chrome, Edge, Vivaldi, Opera and
+Chromium, and any `.crdownload` or `.part` file in Downloads (Safari keeps
+unfinished downloads in its own format, so those aren't supported).
+
+```sh
+git clone https://github.com/BeansAsset/downloadrescue.git ~/downloadrescue
+python3 -m pip install --user pyobjc-framework-WebKit
+~/downloadrescue/make-mac-app.sh
+```
+
+`python3` comes with Apple's developer tools (`xcode-select --install` if
+it's missing). PyObjC is the standard bridge from Python to macOS's own
+windows and WebKit. `make-mac-app.sh` puts **DownloadRescue.app** in your
+Applications folder, so it opens from Launchpad and Spotlight;
+`make-mac-app.sh --remove` takes it away again.
+
+The Mac version is new: the rescue itself is the same tested code as on
+Linux, but the Mac window hasn't had much use yet. Reports are welcome.
+
 ## In a terminal
 
 ```sh
@@ -126,9 +148,14 @@ rescue/
   finder.py     failed downloads in browsers' records and the Downloads folder
   ranges.py     which byte ranges are good, and which are missing
   naming.py     what to call the finished file when the browser had no name yet
-  main.py       the window and the terminal command
-  web/          the window (HTML, CSS, JS)
-tools/          setup for any common distro
+  backend.py    what the window can do, shared by Linux and Mac
+  app_gtk.py    the window on Linux (GTK)
+  app_mac.py    the window on a Mac (Cocoa and WebKit, through PyObjC)
+  cli.py        the terminal command (needs no window toolkit)
+  main.py       picks one of the above
+  web/          the window's page (HTML, CSS, JS, Manrope font)
+tools/          setup for any common distro, and the Mac icon
+make-mac-app.sh makes DownloadRescue.app on a Mac
 tests/          python3 -m unittest discover -s tests
 ```
 

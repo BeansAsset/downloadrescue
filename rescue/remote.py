@@ -6,6 +6,8 @@ total size must be the one we expect. A server that ignores the Range header
 and sends the whole file (200) is detected, never mistaken for the piece.
 """
 
+from __future__ import annotations
+
 import http.client
 import re
 import urllib.error

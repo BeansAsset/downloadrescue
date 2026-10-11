@@ -2,4 +2,4 @@
 
 APP_ID = "io.github.beansasset.DownloadRescue"
 APP_NAME = "DownloadRescue"
-VERSION = "0.1.0"
+VERSION = "0.2.0"

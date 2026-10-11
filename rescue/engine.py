@@ -20,12 +20,15 @@ The rules, in the order they're applied:
   7. Only then does it get its real name, never replacing another file.
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
 import os
 import random
 import re
 import shutil
+import sys
 import time
 from dataclasses import dataclass, field
 
@@ -59,9 +62,25 @@ class Partial:
     browser: str | None = None
 
 
+def sync(fd):
+    """Make what's been written survive a crash or power cut. On a Mac,
+    fsync only reaches the drive's cache; F_FULLFSYNC reaches the disk."""
+    if sys.platform == "darwin":
+        try:
+            import fcntl
+            fcntl.fcntl(fd, fcntl.F_FULLFSYNC)
+            return
+        except (ImportError, AttributeError, OSError):
+            pass
+    os.fsync(fd)
+
+
 def data_ranges(path):
-    """Where a file actually has data, skipping sparse holes (never written)."""
+    """Where a file actually has data, skipping sparse holes (never written).
+    Where the system can't tell, the whole file counts as data."""
     size = os.path.getsize(path)
+    if not hasattr(os, "SEEK_DATA"):
+        return [(0, size)] if size else []
     out, pos = [], 0
     with open(path, "rb") as f:
         fd = f.fileno()
@@ -109,7 +128,7 @@ class Journal:
         with open(tmp, "w") as f:
             json.dump(self.data, f)
             f.flush()
-            os.fsync(f.fileno())
+            sync(f.fileno())
         os.replace(tmp, self.path)
 
     def remove(self):
@@ -315,7 +334,7 @@ class Rescue:
                     out.write(chunk)
                     left -= len(chunk)
                 out.flush()
-                os.fsync(out.fileno())
+                sync(out.fileno())
             self.journal.data["backups"].append([start, end])
             self.journal.save()
 
@@ -370,7 +389,7 @@ class Rescue:
     def _record(self, f, good, start, upto):
         """Make [start, upto) permanent on disk, then note it in the journal.
         The journal never claims more than has been fsynced."""
-        os.fsync(f.fileno())
+        sync(f.fileno())
         good[:] = ranges.merge(good + [(start, upto)])
         self.journal.data["good"] = good
         self.journal.save()
@@ -393,7 +412,7 @@ class Rescue:
         if pos != total:
             self._undo()
             raise Failed(f"The connection ended {total - pos:,} bytes early. Your download was left as it was.")
-        os.fsync(f.fileno())
+        sync(f.fileno())
         self.step("download", "ok", "Read the whole file: everything you had matches.")
         return self._finish(total, expected)
 
@@ -483,7 +502,7 @@ class Rescue:
                         os.pwrite(f.fileno(), chunk, at)
                         at += len(chunk)
             f.truncate(data["original_size"])
-            os.fsync(f.fileno())
+            sync(f.fileno())
         self.journal.remove()
 
     def undo(self):

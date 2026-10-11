@@ -1,6 +1,7 @@
 """Finding downloads that stopped part way.
 
-Chrome-based browsers (Brave, Chrome, Chromium, Edge, Vivaldi, Opera) keep a
+Chrome-based browsers (Brave, Chrome, Chromium, Edge, Vivaldi, Opera), on
+Linux and on a Mac, keep a
 record of every download: where the partial file is, how big the whole file
 should be, and, for downloads fetched in parallel pieces, exactly which byte
 ranges arrived. That record is read from a copy of the browser's History
@@ -10,25 +11,38 @@ Other unfinished files in the Downloads folder (.crdownload, .part) are
 listed too, without that extra knowledge.
 """
 
+from __future__ import annotations
+
 import os
 import re
 import shutil
 import sqlite3
+import sys
 import tempfile
 import urllib.parse
 from dataclasses import dataclass, field
 
-from gi.repository import GLib
-
 HOME = os.path.expanduser("~")
-BROWSERS = {
-    "Brave": ".config/BraveSoftware/Brave-Browser",
-    "Chrome": ".config/google-chrome",
-    "Chromium": ".config/chromium",
-    "Edge": ".config/microsoft-edge",
-    "Vivaldi": ".config/vivaldi",
-    "Opera": ".config/opera",
-}
+MAC = sys.platform == "darwin"
+if MAC:
+    _SUPPORT = "Library/Application Support"
+    BROWSERS = {
+        "Brave": f"{_SUPPORT}/BraveSoftware/Brave-Browser",
+        "Chrome": f"{_SUPPORT}/Google/Chrome",
+        "Chromium": f"{_SUPPORT}/Chromium",
+        "Edge": f"{_SUPPORT}/Microsoft Edge",
+        "Vivaldi": f"{_SUPPORT}/Vivaldi",
+        "Opera": f"{_SUPPORT}/com.operasoftware.Opera",
+    }
+else:
+    BROWSERS = {
+        "Brave": ".config/BraveSoftware/Brave-Browser",
+        "Chrome": ".config/google-chrome",
+        "Chromium": ".config/chromium",
+        "Edge": ".config/microsoft-edge",
+        "Vivaldi": ".config/vivaldi",
+        "Opera": ".config/opera",
+    }
 INTERRUPTED = (3, 4)          # Chrome's download states for "stopped by a problem"
 PARTIAL_ENDINGS = (".crdownload", ".part", ".partial", ".download")
 EPOCH_DIFF = 11644473600       # seconds between 1601 (Chrome's clock) and 1970
@@ -96,7 +110,21 @@ def _from_history(history, browser):
 
 
 def downloads_dir():
-    return GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD) or os.path.join(HOME, "Downloads")
+    """The Downloads folder: ~/Downloads on a Mac; on Linux, the one named in
+    user-dirs.dirs (it can be translated or moved), else ~/Downloads."""
+    if not MAC:
+        config = os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config")
+        try:
+            with open(os.path.join(config, "user-dirs.dirs")) as f:
+                for line in f:
+                    m = re.match(r'\s*XDG_DOWNLOAD_DIR\s*=\s*"(.*)"', line)
+                    if m:
+                        path = m.group(1).replace("$HOME", HOME)
+                        if os.path.isdir(path):
+                            return path
+        except OSError:
+            pass
+    return os.path.join(HOME, "Downloads")
 
 
 def placeholder(name):
